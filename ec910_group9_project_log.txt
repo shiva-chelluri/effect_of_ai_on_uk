@@ -1,0 +1,1750 @@
+### ./do/01_dataset/01_01_merge_financials.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(readxl)
+
+> library(arrow)
+
+> # ============================================================
+> # FILE PATHS
+> # ============================================================
+> FIN_DIR <- "./data/input/financials"
+
+> OUT_DIR <- "./data/temp/raw_financials.parquet"
+
+> # ============================================================
+> # HELPER: process each financial subfolder
+> # ============================================================
+> process_financial_folder <- function(folder_path) {
++   # Get folder name to use as variable prefix
++   var_name <- basename(folder_path)
++ 
++   # List all Excel files in subfolder
++   files <- list.files(path = folder_path, pattern = "\\.xlsx$", full.names = TRUE)
++ 
++   # Read and bind all files in the folder
++   df_raw <- files %>%
++     lapply(read_excel, sheet = "Results", col_types = "text") %>%
++     bind_rows()
++ 
++   # Basic cleaning and pivoting
++   df_long <- df_raw %>%
++     rename(
++       comp_name = `Company name`,
++       bvd_id    = `BvD ID number`
++     ) %>%
++     # Pivot all columns that end with a 4-digit year
++     pivot_longer(
++       cols = matches("\\d{4}$"),
++       names_to = "year",
++       values_to = var_name
++     ) %>%
++     # Extract just the year digits from the column name
++     mutate(
++       year = str_extract(year, "\\d{4}$")
++     ) %>%
++     # Keep only necessary columns and drop duplicates
++     select(bvd_id, comp_name, year, !!sym(var_name)) %>%
++     distinct(bvd_id, year, .keep_all = TRUE)
++ 
++   return(df_long)
++ }
+
+> # ============================================================
+> # PROCESS ALL FOLDERS
+> # ============================================================
+> 
+> # Get list of subdirectories
+> subfolders <- list.dirs(FIN_DIR, recursive = FALSE)
+
+> # Assign folder basenames as names to the list so we can identify them later
+> names(subfolders) <- basename(subfolders)
+
+> # Process all folders into a named list of dataframes
+> all_dfs <- lapply(subfolders, process_financial_folder)
+
+> # Identify the exact name of the employment dataset (case-insensitive search)
+> emp_key <- "employment"
+
+> # Separate the employment dataset from the rest
+> df_base <- all_dfs[[emp_key]]
+
+> dfs_others <- all_dfs[names(all_dfs) != emp_key]
+
+> # Left-join all other datasets to the base employment dataset
+> final_data <- reduce(
++   dfs_others,
++   left_join,
++   by = c("bvd_id", "year"),
++   .init = df_base
++ )
+
+> gc()
+            used   (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  12582858  672.0   22261250 1188.9  17678514  944.2
+Vcells 389710171 2973.3  774901094 5912.1 750097983 5722.8
+
+> # ============================================================
+> # SAVE OUTPUT
+> # ============================================================
+> write_parquet(final_data, OUT_DIR)
+
+> rm(list = ls())
+
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  2946434 157.4   17809000  951.2  17678514  944.2
+Vcells 13535184 103.3  619920876 4729.7 750097983 5722.8
+### ./do/01_dataset/01_02_merge_identifiers.R ###
+
+> # author: u2235356
+> # This script contains the merger of the 19 Orbis Excel Sheets into one singular 
+> # dataframe for further analysis. 
+> 
+> # The following is performed:
+> #  1. Takes all the 7 .xlsx files and merges them. 
+> #  2. Parses dates robustly handling a mix of Excel serials, bare years, and strings.
+> #  3. Identifies exact dissolution dates using legal_event_date cross-referencing.
+> #  4. Renames variables and assigns each variable to be of the correct type.
+> #  6. Generates age of a company, industry code.
+> #  7. Drops observations based on the following reasons:
+> #    i) Observations with age < 0 are removed because they will contain NAs
+> #       not because a company has missing data but rather it did not exist.
+> #    ii) Observations with missing SIC codes are dropped as they are highly 
+> #        indicative of shell firms.
+> #  8. Saves it to the temp folder as a parquet file using nanoparquet.
+> 
+> # Load Libraries
+> library(tidyverse)
+
+> library(readxl)
+
+> library(arrow)
+
+> # Set the directory paths
+> id_dir    <- "./data/input/identifiers"
+
+> save_dir  <- "./data/temp/identifiers.parquet"
+
+> # -------------------------------------------------------------------------
+> # Step 1: Read and Merge All Files
+> # -------------------------------------------------------------------------
+> 
+> # Get all Excel files in the directory
+> id_list   <- list.files(path = id_dir, pattern = "^Identifiers - Sheet.*\\.xlsx$", full.names = TRUE) %>% sort()
+
+> # Read "Results" sheet from all files 
+> identifier_data <- id_list %>%
++   lapply(function(file){ read_excel(file, sheet = "Results", col_types = "text") }) %>%
++   bind_rows()
+
+> # -------------------------------------------------------------------------
+> # Step 3: Clean and Process Identifier Data
+> # -------------------------------------------------------------------------
+> 
+> identifier_clean <- identifier_data %>%
++   select(-`...1`) %>% # dropping index columns
++   mutate(across(where(is.character), ~na_if(., "n.a."))) %>% # replacing "n.a." with NA
++   rename(
++     comp_name        = `Company name`,
++     sic              = `Primary UK SIC (2007) code`,
++     bvd_id           = `BvD ID number`,  
++     start_date       = `Date of incorporation`, 
++     status_date      = `Status date`, 
++     status           = `Company status`, 
++     legal_form       = `Legal form`,
++     sic_des          = `Primary UK SIC (2007) description`
++   )
+
+> # saving identifier data
+> write_parquet(identifier_clean, save_dir)
+
+> rm(list = ls())
+
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  2946894 157.4   14247200  760.9  17678514  944.2
+Vcells 13538210 103.3  495936701 3783.7 750097983 5722.8
+### ./do/01_dataset/01_03_sic_treatment_map_manually_made.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(readxl)
+
+> library(arrow)
+
+> library(haven)
+
+> library(tikzDevice)
+
+> # ============================================================
+> # FILE PATHS
+> # ============================================================
+> CENSUS_2021_FILE <- "data/input/treatment_data/census_2021.csv"
+
+> CENSUS_2011_FILE <- "data/input/treatment_data/census_2011.csv"
+
+> ISCO_SOC_MAP <- "data/input/treatment_data/isco2d_to_soc2010_2d_crosswalk.csv"
+
+> RTI_2021_FILE <- "data/input/rti_102_countries/rti_country_specific_survey_predicted.dta"
+
+> MAPPING_FILE <- "data/input/treatment_data/soc_2020_to_2010_mapping_lfs.csv"
+
+> AIOE_FILE <- "data/input/treatment_data/aioe.xlsx"
+
+> OUT_DIR <- "data/temp/sic_exposure_summary.parquet"
+
+> # Occupations to exclude: elected officers, armed forces officers,
+> # waste disposal managers, and non-commissioned officers
+> EXCLUDED_SOC2010 <- c(1116, 1171, 1255, 3311)
+
+> # ============================================================
+> # AIOE EXPOSURE DATA (shared across both census years)
+> # ============================================================
+> aioe <- read_excel(AIOE_FILE, sheet = "AIOE by education level", skip = 2) %>%
++   select(soc_2010 = SOC, aioe_raw = `All AI`, llm_raw = LLM)
+
+> # ============================================================
+> # SOC 2020 → SOC 2010 CROSSWALK
+> # ============================================================
+> soc_map <- read_csv(MAPPING_FILE) %>%
++   mutate(
++     soc_2020 = as.numeric(soc_2020),
++     soc_2010 = as.numeric(soc_2010)
++   )
+
+> # ============================================================
+> # CENSUS 2021: WEIGHT MATRIX (412 SOC-2020 × 87 SIC-2digit)
+> # ============================================================
+> 
+> # Read, drop trailing summary row, normalise each SIC column to sum to 1
+> census_2021_weight_matrix <- read_csv(CENSUS_2021_FILE, col_types = cols(.default = col_number())) %>%
++   slice(-n()) %>%
++   mutate(across(2:88, function(x) x / sum(x))) %>%
++   rename(soc_2020 = ...1)
+
+> # Crosswalk from SOC 2020 → SOC 2010 via weighted aggregation (412 × 88 → 369 × 88)
+> census_2021_weight_matrix_soc2010 <- census_2021_weight_matrix %>%
++   inner_join(soc_map, by = "soc_2020") %>%
++   select(-soc_2020) %>%
++   group_by(soc_2010) %>%
++   summarise(across(everything(), sum), .groups = "drop") %>%
++   mutate(across(matches("^\\d+$"), ~ . / sum(.))) # ← re-normalise post-aggregation
+
+> census_2021_weight_matrix_soc2010 <- census_2021_weight_matrix %>%
++   inner_join(soc_map, by = "soc_2020") %>%
++   select(-soc_2020) %>%
++   group_by(soc_2010) %>%
++   summarise(across(everything(), sum), .groups = "drop")
+
+> # Attach AIOE scores and drop excluded occupations (365 SOC-2010 × 89)
+> combined_weight_matrix_2021 <- census_2021_weight_matrix_soc2010 %>%
++   left_join(aioe, by = "soc_2010", keep = FALSE) %>%
++   filter(!soc_2010 %in% EXCLUDED_SOC2010)
+
+> # ============================================================
+> # CENSUS 2021: AI EXPOSURE SCORES (inner product → n_sic × 3)
+> # ============================================================
+> 
+> sic_cols <- combined_weight_matrix_2021 %>%
++   select(matches("^\\d+$")) %>%
++   colnames()
+
+> sic_mat <- combined_weight_matrix_2021 %>%
++   select(all_of(sic_cols)) %>%
++   as.matrix()
+
+> aioe_vec <- combined_weight_matrix_2021$aioe_raw
+
+> llm_vec <- combined_weight_matrix_2021$llm_raw
+
+> result_2021 <- tibble(
++   sic_2digit = as.integer(sic_cols),
++   ai_2021    = as.vector(t(sic_mat) %*% aioe_vec),
++   llm_2021   = as.vector(t(sic_mat) %*% llm_vec)
++ )
+
+> # ============================================================
+> # CENSUS 2011: WEIGHT MATRIX (389 SOC-2010 × 87 SIC-2digit)
+> # ============================================================
+> 
+> # Read, collapse duplicate SIC columns (same name, different sub-codes) by rowsum
+> census_2011_weight_matrix <- read_csv(CENSUS_2011_FILE, col_types = cols(.default = col_number())) %>%
++   mutate(row_id = row_number()) %>%
++   pivot_longer(cols = -row_id, names_to = "col_name", values_to = "value") %>%
++   mutate(col_name = str_replace(col_name, "\\.\\..*$", "")) %>%
++   group_by(row_id, col_name) %>%
++   summarise(value = sum(value), .groups = "drop") %>%
++   pivot_wider(names_from = col_name, values_from = value) %>%
++   select(-row_id) %>%
++   mutate(across(-soc_2010, function(x) x / sum(x)))
+
+> # Attach AIOE scores and drop excluded occupations
+> combined_weight_matrix_2011 <- census_2011_weight_matrix %>%
++   left_join(aioe, by = "soc_2010", keep = FALSE) %>%
++   filter(!soc_2010 %in% EXCLUDED_SOC2010)
+
+> # ============================================================
+> # CENSUS 2011: AI EXPOSURE SCORES (inner product → n_sic × 3)
+> # ============================================================
+> 
+> sic_cols <- combined_weight_matrix_2011 %>%
++   select(matches("^\\d+$")) %>%
++   colnames()
+
+> sic_mat <- combined_weight_matrix_2011 %>%
++   select(all_of(sic_cols)) %>%
++   as.matrix()
+
+> aioe_vec <- combined_weight_matrix_2011$aioe_raw
+
+> llm_vec <- combined_weight_matrix_2011$llm_raw
+
+> result_2011 <- tibble(
++   sic_2digit = as.integer(sic_cols),
++   ai_2011    = as.vector(t(sic_mat) %*% aioe_vec),
++   llm_2011   = as.vector(t(sic_mat) %*% llm_vec)
++ )
+
+> # ============================================================
+> # COMBINE AND EXPORT
+> # ============================================================
+> 
+> combined_result <- result_2021 %>%
++   left_join(result_2011, by = "sic_2digit", keep = FALSE)
+
+> write_parquet(x = combined_result, OUT_DIR)
+
+> # ===================================================
+> # ROTEMBERG WEIGHTS
+> # ====================================================
+> library(dplyr)
+
+> library(tibble)
+
+> library(knitr)
+
+> # 1. Setup the shared Z Matrix (Exogenous Shares)
+> sic_cols <- as.character(result_2021$sic_2digit)
+
+> Z <- as.matrix(combined_weight_matrix_2011[, sic_cols]) # 365 x 87
+
+> # ==========================================
+> # 2. AI Weights Calculation
+> # ==========================================
+> X_ai <- combined_weight_matrix_2011$aioe_raw
+
+> g_ai <- result_2021$ai_2021
+
+> Z_cross_X_ai <- t(Z) %*% X_ai
+
+> num_ai <- g_ai * Z_cross_X_ai
+
+> alpha_ai <- num_ai / sum(num_ai)
+
+> df_ai <- tibble(
++   SIC = result_2021$sic_2digit,
++   Weight = as.numeric(alpha_ai),
++   Shift = g_ai,
++   Z_cross_X = as.numeric(Z_cross_X_ai)
++ ) %>% arrange(desc(Weight))
+
+> # Extract Top 5 and Bottom 5 for AI
+> table_ai <- bind_rows(
++   head(df_ai, 5) %>% mutate(Rank = "Top 5"),
++   tail(df_ai, 5) %>% mutate(Rank = "Bottom 5")
++ ) %>% select(Rank, SIC, Weight, Shift, Z_cross_X)
+
+> # ==========================================
+> # 3. LLM Weights Calculation
+> # ==========================================
+> X_llm <- combined_weight_matrix_2011$llm_raw
+
+> g_llm <- result_2021$llm_2021
+
+> Z_cross_X_llm <- t(Z) %*% X_llm
+
+> num_llm <- g_llm * Z_cross_X_llm
+
+> alpha_llm <- num_llm / sum(num_llm)
+
+> df_llm <- tibble(
++   SIC = result_2021$sic_2digit,
++   Weight = as.numeric(alpha_llm),
++   Shift = g_llm,
++   Z_cross_X = as.numeric(Z_cross_X_llm)
++ ) %>% arrange(desc(Weight))
+
+> # Extract Top 5 and Bottom 5 for LLM
+> table_llm <- bind_rows(
++   head(df_llm, 5) %>% mutate(Rank = "Top 5"),
++   tail(df_llm, 5) %>% mutate(Rank = "Bottom 5")
++ ) %>% select(Rank, SIC, Weight, Shift, Z_cross_X)
+
+> # ==========================================
+> # 4. Print LaTeX Tables to Console
+> # ==========================================
+> 
+> 
+> cat("\n%%% AI ROTEMBERG WEIGHTS %%%\n")
+
+%%% AI ROTEMBERG WEIGHTS %%%
+
+> cat(kable(table_ai, format = "latex", booktabs = TRUE, digits = 4,
++           caption = "Top and Bottom 5 SIC Codes by AI Rotemberg Weight",
++           col.names = c("Group", "SIC Code", "Rotemberg Weight", "AI Shift", "Z'X (Covariance)"),
++           row.names = FALSE))
+\begin{table}
+
+\caption{Top and Bottom 5 SIC Codes by AI Rotemberg Weight}
+\centering
+\begin{tabular}[t]{lrrrr}
+\toprule
+Group & SIC Code & Rotemberg Weight & AI Shift & Z'X (Covariance)\\
+\midrule
+Top 5 & 69 & 0.0552 & 1.6974 & 1.1245\\
+Top 5 & 66 & 0.0499 & 1.5416 & 1.1204\\
+Top 5 & 65 & 0.0444 & 1.4610 & 1.0511\\
+Top 5 & 64 & 0.0438 & 1.5203 & 0.9974\\
+Top 5 & 62 & 0.0438 & 1.5601 & 0.9709\\
+\addlinespace
+Bottom 5 & 18 & -0.0002 & 0.0455 & -0.1829\\
+Bottom 5 & 20 & -0.0002 & -0.2009 & 0.0422\\
+Bottom 5 & 19 & -0.0004 & -0.1681 & 0.0725\\
+Bottom 5 & 39 & -0.0011 & 0.1600 & -0.2361\\
+Bottom 5 & 9 & -0.0012 & 0.7314 & -0.0586\\
+\bottomrule
+\end{tabular}
+\end{table}
+> cat("\n\n%%% LLM ROTEMBERG WEIGHTS %%%\n")
+
+
+%%% LLM ROTEMBERG WEIGHTS %%%
+
+> cat(kable(table_llm, format = "latex", booktabs = TRUE, digits = 4,
++           caption = "Top and Bottom 5 SIC Codes by LLM Rotemberg Weight",
++           col.names = c("Group", "SIC Code", "Rotemberg Weight", "LLM Shift", "Z'X (Covariance)"),
++           row.names = FALSE))
+\begin{table}
+
+\caption{Top and Bottom 5 SIC Codes by LLM Rotemberg Weight}
+\centering
+\begin{tabular}[t]{lrrrr}
+\toprule
+Group & SIC Code & Rotemberg Weight & LLM Shift & Z'X (Covariance)\\
+\midrule
+Top 5 & 69 & 0.0576 & 1.7163 & 1.1304\\
+Top 5 & 66 & 0.0467 & 1.4647 & 1.0737\\
+Top 5 & 65 & 0.0430 & 1.4073 & 1.0303\\
+Top 5 & 73 & 0.0416 & 1.5112 & 0.9273\\
+Top 5 & 64 & 0.0414 & 1.4426 & 0.9677\\
+\addlinespace
+Bottom 5 & 93 & -0.0001 & 0.0795 & -0.0259\\
+Bottom 5 & 77 & -0.0003 & 0.1420 & -0.0656\\
+Bottom 5 & 30 & -0.0003 & 0.0819 & -0.1325\\
+Bottom 5 & 39 & -0.0005 & 0.0538 & -0.2825\\
+Bottom 5 & 9 & -0.0028 & 0.5321 & -0.1785\\
+\bottomrule
+\end{tabular}
+\end{table}
+> rm(list = ls())
+
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  2948431 157.5   11397760  608.8  17678514  944.2
+Vcells 13547178 103.4  396749361 3027.0 750097983 5722.8
+### ./do/01_dataset/01_04_raw_merger.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(arrow)
+
+> library(lubridate)
+
+> # ============================================================
+> # HELPER: winsorise
+> # ============================================================
+> winsorise <- function(x, p_lo = 0, p_hi = 1) {
++   pmax(pmin(x, quantile(x, p_hi, na.rm = TRUE)),
++        quantile(x, p_lo, na.rm = TRUE))
++ }
+
+> # ============================================================
+> # FILE PATHS
+> # ============================================================
+> EMPL_DIR <- "data/temp/raw_financials.parquet"
+
+> ID_DIR   <- "data/temp/identifiers.parquet"
+
+> SOC_DIR  <- "data/temp/sic_exposure_summary.parquet"
+
+> OUT_DIR  <- "data/output/main.parquet"
+
+> FINANCIAL_VARS <- c("intangible_assets", "investment", "liquidity_ratio",
++                     "long_term_debt", "profit_loss_before_taxation",
++                     "remuneration", "roa", "total_assets", "turnover")
+
+> # ============================================================
+> # LOAD & MERGE
+> # ============================================================
+> employment  <- read_parquet(EMPL_DIR) %>% distinct(bvd_id, year, .keep_all = TRUE)
+
+> identifiers <- read_parquet(ID_DIR)   %>% distinct(bvd_id,       .keep_all = TRUE)
+
+> soc         <- read_parquet(SOC_DIR)
+
+> cat(sprintf("Loaded: %d obs, %d firms\n", nrow(employment), n_distinct(employment$bvd_id)))
+Loaded: 5388152 obs, 384868 firms
+
+> combined <- employment %>%
++   left_join(identifiers, by = "bvd_id") %>%
++   mutate(
++     sic_string = str_pad(as.character(sic), width = 2, pad = "0"),
++     sic_2digit = str_sub(sic_string, 1, 2),
++     sic_2digit = case_when(sic_2digit %in% c("41","42","43") ~ "41", TRUE ~ sic_2digit),
++     sic_2digit = as.numeric(sic_2digit)
++   ) %>%
++   left_join(soc, by = "sic_2digit")
+
+> # ============================================================
+> # TYPE CONVERSIONS
+> # ============================================================
+> combined <- combined %>%
++   #rename(comp_name = comp_name.x) %>%
++   select(-comp_name.y) %>%
++   mutate(
++     bvd_id      = as.character(bvd_id),
++     comp_name   = as.character(comp_name),
++     year        = as.integer(as.character(year)),
++     sic         = as.integer(sic),
++     sic_2digit  = as.character(sic_2digit),
++     status_date = as.Date(as.numeric(status_date), origin = "1899-12-30"),
++     across(c(employment, all_of(FINANCIAL_VARS), ai_2021, llm_2021, ai_2011, llm_2011),
++            ~ suppressWarnings(as.numeric(.)))
++   ) %>%
++   mutate(
++     start_date = case_when(
++       str_detect(start_date, "^\\d+$") ~ as.character(as.Date(as.numeric(start_date), origin = "1899-12-30")),
++       TRUE ~ as.character(dmy(start_date))
++     ),
++     start_date = as.Date(start_date)
++   )
+
+> # ============================================================
+> # DERIVED DATE COLUMNS
+> # ============================================================
+> combined <- combined %>%
++   mutate(
++     birth_year = year(start_date),
++     death_year = if_else(status %in% c("Dissolved", "In liquidation"), year(status_date), 3000L)
++   )
+
+> # ============================================================
+> # ATTRITION INDICATORS (consumed by 01_05_attrition_tests.R)
+> # ============================================================
+> combined <- combined %>%
++   mutate(
++     entry     = as.integer(birth_year == year),
++     exit      = as.integer(death_year == year & death_year < 3000L),
++     reporting = as.integer(!is.na(employment)),
++     exists    = as.integer(year > birth_year & year < death_year)
++   )
+
+> # ============================================================
+> # S2 — ACTIVITY WINDOW
+> # ============================================================
+> # Pre-entry: 987,365 obs | Post-exit: 85,770 obs (see 01_04_raw_merger_log.txt)
+> combined <- combined %>%
++   mutate(
++     s2_active = as.integer((is.na(birth_year) | year >= birth_year) & year <= death_year),
++     lemp      = log(employment)
++   )
+
+> cat(sprintf("S2 activity window    — flagged out: %d obs\n", sum(combined$s2_active == 0)))
+S2 activity window    — flagged out: NA obs
+
+> # ============================================================
+> # S3 — EMPLOYMENT VALIDITY
+> # ============================================================
+> # S3a: zero/negative employment confirmed absent in this dataset
+> # S3b: extreme YoY growth (|delta%| > 200%)
+> combined <- combined %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   mutate(
++     emp_growth = (employment - lag(employment)) / lag(employment),
++     s3_valid   = as.integer(is.na(emp_growth) | abs(emp_growth) <= 2)
++   ) %>%
++   ungroup() %>%
++   select(-emp_growth)
+
+> cat(sprintf("S3 employment validity — flagged out: %d obs\n", sum(combined$s3_valid == 0, na.rm = TRUE)))
+S3 employment validity — flagged out: 37809 obs
+
+> # ============================================================
+> # S4 — WINSORISE FINANCIAL VARIABLES (within-year, p1/p99)
+> # ============================================================
+> combined <- combined %>%
++   group_by(year) %>%
++   mutate(across(all_of(intersect(FINANCIAL_VARS, names(combined))), winsorise)) %>%
++   ungroup()
+
+> cat("S4 winsorising         — complete\n")
+S4 winsorising         — complete
+
+> # ============================================================
+> # S5 — MINIMUM PANEL PRESENCE (>= 3 consecutive years)
+> # ============================================================
+> consec_flag <- combined %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   summarise(
++     max_consec = {
++       d <- diff(sort(unique(year)))
++       r <- rle(d == 1)
++       if (length(r$lengths) == 0) 1L else max(r$lengths[r$values] + 1L, 1L, na.rm = TRUE)
++     },
++     .groups = "drop"
++   ) %>%
++   mutate(s5_consec = as.integer(max_consec >= 3)) %>%
++   select(bvd_id, s5_consec)
+
+> combined <- combined %>% left_join(consec_flag, by = "bvd_id")
+
+> cat(sprintf("S5 min panel presence — flagged out: %d firms, %d obs\n",
++             sum(consec_flag$s5_consec == 0),
++             sum(combined$s5_consec == 0)))
+S5 min panel presence — flagged out: 0 firms, 0 obs
+
+> # ============================================================
+> # S6 — SIC DIAGNOSTIC (no flag applied)
+> # ============================================================
+> # All candidate exclusion SICs (01-03, 64-66, 84, 97-99) have full treatment coverage.
+> # Shares: Agriculture 0.99% | Finance 2.55% | Public admin 0.14% | Extraterritorial 0.22%
+> # Retain all; drop as sensitivity robustness if needed (see Slide 31 battery).
+> 
+> # ============================================================
+> # S7 — BASELINE SIC ASSIGNMENT (2019 anchor, earliest-year fallback)
+> # ============================================================
+> # No SIC switchers in this dataset. Assignment is a formality to lock in time-invariant d_i.
+> baseline_sic <- combined %>%
++   filter(!is.na(sic_2digit)) %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   summarise(
++     sic_2digit_base = if (any(year == 2019, na.rm = TRUE))
++       sic_2digit[which(year == 2019)[1]]
++     else
++       sic_2digit[which.min(year)],
++     .groups = "drop"
++   )
+
+> n_anchored <- combined %>% filter(year == 2019) %>% distinct(bvd_id) %>% nrow()
+
+> cat(sprintf("S7 baseline SIC       — 2019 anchor: %d firms | fallback: %d firms\n",
++             n_anchored, nrow(baseline_sic) - n_anchored))
+S7 baseline SIC       — 2019 anchor: 384868 firms | fallback: -11430 firms
+
+> combined <- combined %>%
++   select(-sic_2digit, -any_of(c("ai_2021","llm_2021","ai_2011","llm_2011"))) %>%
++   left_join(
++     baseline_sic %>% transmute(bvd_id, sic_2digit = as.numeric(sic_2digit_base)),
++     by = "bvd_id"
++   ) %>%
++   left_join(soc, by = "sic_2digit")
+
+> # ============================================================
+> # S8 — TREATMENT MATCH (all missingness = NA sic_2digit; 11,286 firms)
+> # ============================================================
+> combined <- combined %>%
++   group_by(bvd_id) %>%
++   mutate(
++     s8_treated = as.integer(
++       all(!is.na(ai_2021)) & all(!is.na(llm_2021)) &
++         all(!is.na(ai_2011)) & all(!is.na(llm_2011))
++     )
++   ) %>%
++   ungroup()
+
+> cat(sprintf("S8 treatment match    — flagged out: %d firms, %d obs\n",
++             n_distinct(combined$bvd_id[combined$s8_treated == 0]),
++             sum(combined$s8_treated == 0)))
+S8 treatment match    — flagged out: 11430 firms, 160020 obs
+
+> # ============================================================
+> # IN_SAMPLE COMPOSITE FLAG
+> # ============================================================
+> combined <- combined %>%
++   mutate(in_sample = as.integer(s2_active & s3_valid  & s8_treated)) %>%
++   select(-matches("comp_name\\.[xy]")) %>%
++   distinct()
+
+> cat(sprintf("\nFull dataset : %d obs, %d firms\n", nrow(combined), n_distinct(combined$bvd_id)))
+
+Full dataset : 5388152 obs, 384868 firms
+
+> cat(sprintf("in_sample = 1: %d obs, %d firms\n",
++             sum(combined$in_sample), n_distinct(combined$bvd_id[combined$in_sample == 1])))
+in_sample = 1: NA obs, 372429 firms
+
+> stopifnot(sum(duplicated(combined %>% select(bvd_id, year))) == 0)
+
+> stopifnot(sum(is.infinite(combined$lemp), na.rm = TRUE) == 0)
+
+> # ============================================================
+> # SAVE OUTPUT
+> # ============================================================
+> write_parquet(combined, OUT_DIR)
+
+> rm(list = ls()); gc()
+            used   (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells   3033126  162.0   26065007 1392.1  32581258 1740.1
+Vcells 140331636 1070.7  813302557 6205.1 847123497 6463.1
+### ./do/01_dataset/01_05_attrition_tests.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(kableExtra)
+
+> library(fixest)
+
+> library(panelsummary)
+
+> library(arrow)
+
+> # ============================================================
+> # FILE PATHS
+> # ============================================================
+> DATA_DIR <- "./data/temp/final_before_attrition_test.parquet"
+
+> OUT_DIR  <- "./output/tables/attrition_tests.tex"
+
+> # ============================================================
+> # LOAD DATA
+> # ============================================================
+> data <- read_parquet(DATA_DIR)
+
+> # entry, exit, reporting, exists, post all pre-generated in 01_04_raw_merger.R
+> data <- data %>% 
++   mutate(post = as.integer(year > 2021), 
++          sic_1digit = floor(sic_2digit/10))
+
+> # ============================================================
+> # ENTRY & EXIT MODELS
+> # ============================================================
+> attrition_models <- feols(
++   c(entry, exit) ~ sw(ai_2021:post, llm_2021:post) | bvd_id + year + sic_1digit[year],
++   data      = data,
++   subset    = ~year > 2015 & year < 2025,
++   cluster   = ~sic_2digit,
++   nthreads  = 10
++ )
+
+> iv_entry_ai  <- feols(entry ~ 1 | bvd_id + year + sic_1digit[year] | ai_2021:post  ~ ai_2011:post,
++                       data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> iv_exit_ai   <- feols(exit  ~ 1 | bvd_id + year + sic_1digit[year] | ai_2021:post  ~ ai_2011:post,
++                       data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> iv_entry_llm <- feols(entry ~ 1 | bvd_id + year + sic_1digit[year] | llm_2021:post ~ llm_2011:post,
++                       data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> iv_exit_llm  <- feols(exit  ~ 1 | bvd_id + year + sic_1digit[year] | llm_2021:post ~ llm_2011:post,
++                       data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> # ============================================================
+> # REPORTING MODELS
+> # ============================================================
+> reporting_models <- feols(
++   reporting ~ sw(ai_2021:post, llm_2021:post) | bvd_id + year + sic_1digit[year],
++   data     = data,
++   subset   = ~year > 2015 & year < 2025,
++   cluster  = ~sic_2digit,
++   nthreads = 10
++ )
+
+> iv_reporting_ai  <- feols(reporting ~ 1 | bvd_id + year  + sic_1digit[year] | ai_2021:post  ~ ai_2011:post,
++                           data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> iv_reporting_llm <- feols(reporting ~ 1 | bvd_id + year + sic_1digit[year] | llm_2021:post ~ llm_2011:post,
++                           data = data, cluster = ~sic_2digit, subset = ~year > 2015 & year < 2025, nthreads = 10)
+
+> # ============================================================
+> # TABLE: ENTRY, EXIT, AND REPORTING
+> # ============================================================
+> panelsummary(
++   list(attrition_models[[1]], iv_entry_ai,  attrition_models[[3]], iv_exit_ai,  reporting_models[[1]], iv_reporting_ai),
++   list(attrition_models[[2]], iv_entry_llm, attrition_models[[4]], iv_exit_llm, reporting_models[[2]], iv_reporting_llm),
++   panel_labels = c("Panel A: AI Exposure", "Panel B: LLM Exposure"),
++   italic = TRUE, hline_after = FALSE, pretty_num = TRUE, collapse_fe = TRUE,
++   fmt = 3, stars = c("*" = .1, "**" = .05, "***" = .01),
++   hline_before_fe = TRUE, gof_omit = "AIC|BIC|R2|R2 Adj.|RMSE|Std.Errors",
++   # format = "latex",
++   coef_map = c("ai_2021:post"       = "Exposure × Post",
++                "fit_ai_2021:post"   = "Exposure × Post",
++                "llm_2021:post"      = "Exposure × Post",
++                "fit_llm_2021:post"  = "Exposure × Post"),
++   caption  = "Entry, Exit and Reporting explained by Exposure",
++   colnames = c("", "OLS", "IV", "OLS", "IV", "OLS", "IV")
++ ) %>%
++   add_header_above(c(` ` = 1, `Entry` = 2, `Exit` = 2, `Reporting` = 2)) %>%
++   kable_styling(latex_options = c("booktabs", "hold_position"),
++                 position = "center", full_width = FALSE, font_size = 10)   
+
+>  #%>%  save_kable(file = OUT_DIR)
+> 
+> # ============================================================
+> # CLEANUP
+> # ============================================================
+> rm(list = ls()); gc()
+           used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  3566785 190.5   16681605  890.9  32581258 1740.1
+Vcells 14730455 112.4  650642046 4964.1 847123497 6463.1
+### ./do/02_analysis/02_01_raw_trend_plots.R ###
+
+> library(tikzDevice)
+
+> library(tidyverse)
+
+> library(fixest)
+
+> library(ggfixest)
+
+> library(arrow)
+
+> # Load data
+> setwd("./")
+
+> DATA_DIR <- "./data/output/main.parquet"
+
+> df <- read_parquet(DATA_DIR)
+
+> gc()
+           used  (Mb) gc trigger   (Mb)  max used   (Mb)
+Ncells  3592672 191.9   13345284  712.8  32581258 1740.1
+Vcells 25545591 194.9  520513637 3971.3 847123497 6463.1
+
+> # ============================================================
+> # OUTPUT SETUP
+> # ============================================================
+> FIG_DIR <- "./output/figures"
+
+> dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
+
+> # A4 side-by-side subfigure dimensions:
+> # A4 text width ~ 160mm with 25mm margins each side
+> # Two subfigures with a small gap → each panel ~ 78mm ≈ 3.07in
+> # Aspect ratio ~ 0.8 → height ~ 2.5in
+> FIG_W <- 4   # inches (width per subfigure panel)
+
+> FIG_H <- 3   # inches (height per subfigure panel)
+
+> # ============================================================
+> # HELPER: save a ggplot as .tex via tikzDevice
+> # ============================================================
+> save_tikz <- function(plot_obj, filename) {
++   filepath <- file.path(FIG_DIR, paste0(filename, ".tex"))
++   tikz(filepath, width = FIG_W, height = FIG_H, standAlone = FALSE)
++   print(plot_obj)
++   dev.off()
++   cat(sprintf("Saved: %s\n", filepath))
++ }
+
+> # ============================================================
+> # HELPER: prepare summarised quartile data for a given score
+> # ============================================================
+> prepare_quartile_data <- function(data, score_var) {
++   data %>%
++     filter(!is.na(.data[[score_var]]), year < 2025, in_sample == 1) %>%
++     mutate(exposure_quartile = ntile(.data[[score_var]], 4)) %>%
++     mutate(Group = factor(exposure_quartile,
++                           levels = c(1, 2, 3, 4),
++                           labels = c("Q1 (Lowest Exposure)",
++                                      "Q2 (Low-Mid Exposure)",
++                                      "Q3 (Mid-High Exposure)",
++                                      "Q4 (Highest Exposure)"))) %>%
++     group_by(year, Group) %>%
++     summarize(mean_lemp = mean(lemp, na.rm = TRUE), .groups = "drop")
++ }
+
+> # ============================================================
+> # HELPER: all-quartile trend plot
+> # ============================================================
+> make_all_plot <- function(data) {
++   ggplot(data, aes(x = year, y = mean_lemp,
++                    color = Group, shape = Group, linetype = Group)) +
++     annotate("rect", xmin = 2016, xmax = 2021, ymin = -Inf, ymax = Inf,
++              alpha = 0.2, fill = "gray60") +
++     annotate("rect", xmin = 2021, xmax = Inf, ymin = -Inf, ymax = Inf,
++              alpha = 0.2, fill = "gray40") +
++     geom_vline(xintercept = 2016, linetype = "dashed", color = "black", linewidth = 0.5) +
++     geom_vline(xintercept = 2021, linetype = "dashed", color = "black", linewidth = 0.5) +
++     geom_line(linewidth = 0.8) +
++     geom_point(size = 2, fill = "white", stroke = 0.8) +
++     scale_color_manual(values = c("black", "gray30", "gray50", "gray70")) +
++     scale_shape_manual(values = c(16, 17, 15, 18)) +
++     labs(x = "Year", y = "Log Employment", color = NULL, shape = NULL, linetype = NULL) +
++     theme_classic(base_size = 9) +
++     guides(color = guide_legend(nrow = 2, byrow = TRUE)) +
++     theme(panel.grid       = element_blank(),
++           legend.position   = "bottom",
++           legend.background = element_blank(),
++           legend.key        = element_blank(),
++           legend.key.size   = unit(0.35, "cm"),
++           legend.text       = element_text(size = 6),
++           legend.margin     = margin(t = -2))
++ }
+
+> # ============================================================
+> # HELPER: pairwise quartile plot
+> # ============================================================
+> make_pair_plot <- function(data, q_a, q_b) {
++   filtered_data <- data %>%
++     filter(as.numeric(Group) %in% c(q_a, q_b))
++ 
++   ggplot(filtered_data, aes(x = year, y = mean_lemp,
++                             color = Group, shape = Group, linetype = Group)) +
++     annotate("rect", xmin = 2016, xmax = 2021, ymin = -Inf, ymax = Inf,
++              alpha = 0.2, fill = "gray60") +
++     annotate("rect", xmin = 2021, xmax = Inf, ymin = -Inf, ymax = Inf,
++              alpha = 0.2, fill = "gray40") +
++     geom_vline(xintercept = 2016, linetype = "dashed", color = "black", linewidth = 0.5) +
++     geom_vline(xintercept = 2021, linetype = "dashed", color = "black", linewidth = 0.5) +
++     geom_line(linewidth = 0.8) +
++     geom_point(size = 2, fill = "white", stroke = 0.8) +
++     scale_color_manual(values = c("black", "gray40")) +
++     labs(x = "Year", y = "Log Employment", color = NULL, shape = NULL, linetype = NULL) +
++     theme_classic(base_size = 9) +
++     theme(panel.grid       = element_blank(),
++           legend.position   = "bottom",
++           legend.background = element_blank(),
++           legend.key        = element_blank(),
++           legend.key.size   = unit(0.35, "cm"),
++           legend.text       = element_text(size = 7),
++           legend.margin     = margin(t = -2))
++ }
+
+> # ============================================================
+> # GENERATE & SAVE PLOTS FOR BOTH EXPOSURE MEASURES
+> # ============================================================
+> score_configs <- list(
++   list(var = "ai_2021",  prefix = "ai"),
++   list(var = "llm_2021", prefix = "llm")
++ )
+
+> pair_specs <- list(
++   list(qa = 1, qb = 2, tag = "q1_q2"),
++   list(qa = 3, qb = 4, tag = "q3_q4"),
++   list(qa = 1, qb = 4, tag = "q1_q4"),
++   list(qa = 2, qb = 3, tag = "q2_q3"),
++   list(qa = 2, qb = 4, tag = "q2_q4"),
++   list(qa = 1, qb = 3, tag = "q1_q3")
++ )
+
+> for (cfg in score_configs) {
++   cat(sprintf("\n=== %s exposure plots ===\n", toupper(cfg$prefix)))
++ 
++   plot_data <- prepare_quartile_data(df, cfg$var)
++   gc()
++ 
++   # All-quartile plot
++   p_all <- make_all_plot(plot_data)
++   save_tikz(p_all, paste0("trend_", cfg$prefix, "_all"))
++ 
++   # Pairwise plots
++   for (sp in pair_specs) {
++     p <- make_pair_plot(plot_data, sp$qa, sp$qb)
++     save_tikz(p, paste0("trend_", cfg$prefix, "_", sp$tag))
++   }
++ }
+
+=== AI exposure plots ===
+ERROR: 
+TeX was unable to calculate metrics for:
+
+	\char77
+
+Run the following commands for diagnosis:
+
+	tikzTest()
+	tikzTest("\\char77")
+
+Common reasons for failure include:
+  * The string contains a character which is special to LaTeX unless
+    escaped properly, such as % or $.
+  * The string makes use of LaTeX commands provided by a package and
+    the tikzDevice was not told to load the package.
+
+The TeX and log files used for the calculation can help diagnose the
+problem. If these files are missing, rerun the plot and make sure to
+keep the R session open.
+TeX file: tikzStringWidthCalc.tex
+Log file: tikzStringWidthCalc.log
+ 
+### ./do/02_analysis/02_03_main_analysis.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(tikzDevice)
+
+> library(kableExtra)
+
+> library(panelsummary)
+
+> library(fixest)
+
+> library(WeightIt)
+
+> library(cobalt)
+
+> library(ggfixest)
+
+> library(arrow)
+
+> # ============================================================
+> # DATA LOADING & BASELINE CLEANING
+> # ============================================================
+> DATA_DIR <- "./data/output/main.parquet"
+
+> data <- read_parquet(DATA_DIR)
+
+> data <- data %>%
++   mutate(
++     baseline_age = 2019 - year(start_date),
++     sic_1digit = floor(sic_2digit / 10),
++     ta = ntile(total_assets, 10),
++     post = ifelse(year > 2021, 1, 0), 
++     post_2019 = ifelse(year > 2019, 1, 0),
++     post_2018 = ifelse(year > 2018, 1, 0), 
++     post_2017 = ifelse(year > 2017, 1, 0)
++   ) %>%
++   filter(year > 2015, exists == 1, !is.na(lemp))
+
+> # ============================================================
+> # BASELINE TOTAL ASSETS
+> # ============================================================
+> # First observed total_assets for each firm (earliest year)
+> baseline_ta <- data %>%
++   filter(!is.na(total_assets)) %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   slice(1) %>%
++   ungroup() %>%
++   select(bvd_id, baseline_ta = total_assets)
+
+> data <- data %>% left_join(baseline_ta, by = "bvd_id")
+
+> # ============================================================
+> # ENTROPY BALANCING WEIGHTS (WeightIt)
+> # ============================================================
+> # Cross-sectional baseline for weighting (one row per firm)
+> baseline <- data %>%
++   distinct(bvd_id, .keep_all = TRUE) %>%
++   select(bvd_id, ai_2021, llm_2021, baseline_ta, baseline_age, sic_1digit) %>%
++   filter(complete.cases(.))
+
+> # Entropy balancing for AI exposure
+> wb_ai <- weightit(ai_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal",
++   estimand = "ATE"
++ )
+
+> # Entropy balancing for LLM exposure
+> wb_llm <- weightit(llm_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal",
++   estimand = "ATE"
++ )
+
+> # Map weights back to the full panel
+> baseline <- baseline %>%
++   mutate(
++     w_ai = wb_ai$weights,
++     w_llm = wb_llm$weights
++   )
+
+> data <- data %>%
++   left_join(baseline %>% select(bvd_id, w_ai, w_llm), by = "bvd_id")
+
+> rm(baseline_ta, baseline, wb_ai, wb_llm)
+
+> # ============================================================
+> # OUTPUT SETUP
+> # ============================================================
+> FIG_DIR <- "./output/figures"
+
+> dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
+
+> FIG_W <- 4
+
+> FIG_H <- 3
+
+> save_tikz <- function(plot_obj, filename) {
++   filepath <- file.path(FIG_DIR, paste0(filename, ".tex"))
++   tikz(filepath, width = FIG_W, height = FIG_H, standAlone = FALSE)
++   print(plot_obj)
++   dev.off()
++   cat(sprintf("Saved: %s\n", filepath))
++ }
+
+> # ============================================================
+> # HELPER: Event study plot with Wald p-value footnote
+> # ============================================================
+> make_event_study_plot <- function(model, wald_obj) {
++   # Extract p-value from the fixest_wald object
++   pval <- wald_obj$p
++   pval_text <- ifelse(pval < 0.001, "< 0.001", sprintf("%.3f", pval))
++ 
++   # Generate plot using ggfixest
++   p <- ggiplot(model) +
++     geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
++     geom_vline(xintercept = 2021, linetype = "dashed", color = "gray50", linewidth = 0.5) +
++     labs(
++       title = "",
++       x = "Year",
++       y = "Estimate",
++       caption = sprintf("Pre-trend Wald test p-value: %s", pval_text)
++     ) +
++     theme_classic(base_size = 9) +
++     theme(
++       panel.grid = element_blank(),
++       plot.caption = element_text(hjust = 0, size = 7, face = "italic", color = "gray30"),
++       plot.caption.position = "plot"
++     )
++ 
++   return(p)
++ }
+
+> # ============================================================
+> # CUSTOM GLANCE FOR IV DIAGNOSTICS (modelsummary hook)
+> # ============================================================
+> # This injects KP F-stat, Wu-Hausman, and model F-stat into the
+> # glance() output so that gof_map can pick them up in panelsummary.
+> glance_custom.fixest <- function(x, ...) {
++   out <- data.frame(row.names = "")
++ 
++   is_iv <- !is.null(x$iv) && !isFALSE(x$iv)
++ 
++   # Kleibergen-Paap F-stat (IV models only)
++   if (is_iv) {
++     kp <- fitstat(x, ~ivwald1)
++     out$kp_fstat <- kp$ivwald1$stat
++   } else if (!is.null(x$kp_fstat)) {
++     out$kp_fstat <- x$kp_fstat
++   }
++ 
++   # Wu-Hausman test p-value (IV models only)
++   if (is_iv) {
++     wh <- fitstat(x, ~wh)
++     out$wu_hausman <- wh$wh$p
++   } else if (!is.null(x$wu_hausman)) {
++     out$wu_hausman <- x$wu_hausman
++   }
++ 
++   # Plain F-stat of excluded instruments
++   if (is_iv) {
++     ivf <- fitstat(x, ~ivf1)
++     out$ivf1_stat <- ivf$ivf1$stat
++   } else if (!is.null(x$ivf1_stat)) {
++     out$ivf1_stat <- x$ivf1_stat
++   }
++ 
++   # Model F-statistic
++   fst <- fitstat(x, ~f)
++   out$f_stat <- fst$f$stat
++ 
++   out
++ }
+
+> # =============================================================
+> # DYNAMIC MODELS
+> # =============================================================
+> 
+> # OLS — AI & LLM
+> ols.ai <- feols(
++   lemp ~ i(year, ai_2011, ref = 2021) |
++     bvd_id + year + sic_1digit[year],
++   cluster = ~sic_2digit, nthreads = 10,
++   weights = ~w_ai, data = data
++ )
+
+> ols.llm <- feols(
++   lemp ~ i(year, llm_2011, ref = 2021) |
++     bvd_id + year + sic_1digit[year],
++   cluster = ~sic_2digit, nthreads = 10,
++   weights = ~w_llm, data = data
++ )
+
+> ols.ai$wald_pval <- wald(ols.ai, keep = "year::(201[6-9]|2020):ai_2011")
+Wald test, H0: joint nullity of year::2016:ai_2011, year::2017:ai_2011, year::2018:ai_2011, year::2019:ai_2011 and year::2020:ai_2011
+ stat = 1.72713, p-value = 0.12451, on 5 and 1,994,051 DoF, VCOV: Clustered (sic_2digit).
+> ols.llm$wald_pval <- wald(ols.llm, keep = "year::(201[6-9]|2020):llm_2011")
+Wald test, H0: joint nullity of year::2016:llm_2011, year::2017:llm_2011, year::2018:llm_2011, year::2019:llm_2011 and year::2020:llm_2011
+ stat = 1.24978, p-value = 0.28275, on 5 and 1,994,051 DoF, VCOV: Clustered (sic_2digit).
+> # GENERATE & SAVE PLOTS
+> 
+> # AI Plot
+> p_ai <- make_event_study_plot(ols.ai, ols.ai$wald_pval)
+
+> save_tikz(p_ai, "ols_ai_main_spec")
+ERROR: 
+TeX was unable to calculate metrics for:
+
+	\char77
+
+Run the following commands for diagnosis:
+
+	tikzTest()
+	tikzTest("\\char77")
+
+Common reasons for failure include:
+  * The string contains a character which is special to LaTeX unless
+    escaped properly, such as % or $.
+  * The string makes use of LaTeX commands provided by a package and
+    the tikzDevice was not told to load the package.
+
+The TeX and log files used for the calculation can help diagnose the
+problem. If these files are missing, rerun the plot and make sure to
+keep the R session open.
+TeX file: tikzStringWidthCalc.tex
+Log file: tikzStringWidthCalc.log
+ 
+### ./do/03_robustness/03_01_robustness_regressions.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(tikzDevice)
+
+> library(kableExtra)
+
+> library(panelsummary)
+
+> library(fixest)
+
+> library(WeightIt)
+
+> library(cobalt)
+
+> library(ggfixest)
+
+> library(arrow)
+
+> library(modelsummary)
+
+> # ============================================================
+> # DATA LOADING & BASELINE CLEANING
+> # ============================================================
+> DATA_DIR <- "./data/output/main.parquet"
+
+> data <- read_parquet(DATA_DIR)
+
+> data <- data %>%
++   mutate(
++     baseline_age = 2019 - year(start_date),
++     sic_1digit = floor(sic_2digit / 10),
++     ta = ntile(total_assets, 10),
++     post = ifelse(year > 2021, 1, 0),
++     post_2019 = ifelse(year > 2019, 1, 0),
++     post_2018 = ifelse(year > 2018, 1, 0),
++     post_2017 = ifelse(year > 2017, 1, 0)
++   ) %>%
++   filter(year > 2015, exists == 1, !is.na(lemp))
+
+> # ============================================================
+> # BASELINE TOTAL ASSETS
+> # ============================================================
+> baseline_ta <- data %>%
++   filter(!is.na(total_assets)) %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   slice(1) %>%
++   ungroup() %>%
++   select(bvd_id, baseline_ta = total_assets)
+
+> data <- data %>% left_join(baseline_ta, by = "bvd_id")
+
+> # ============================================================
+> # ENTROPY BALANCING WEIGHTS (WeightIt)
+> # ============================================================
+> baseline <- data %>%
++   distinct(bvd_id, .keep_all = TRUE) %>%
++   select(bvd_id, ai_2021, llm_2021, baseline_ta, baseline_age, sic_1digit) %>%
++   filter(complete.cases(.))
+
+> wb_ai <- weightit(ai_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal", estimand = "ATE"
++ )
+
+> wb_llm <- weightit(llm_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal", estimand = "ATE"
++ )
+
+> baseline <- baseline %>%
++   mutate(
++     w_ai  = wb_ai$weights,
++     w_llm = wb_llm$weights
++   )
+
+> data <- data %>%
++   left_join(baseline %>% select(bvd_id, w_ai, w_llm), by = "bvd_id")
+
+> rm(baseline_ta, baseline, wb_ai, wb_llm)
+
+> # ============================================================
+> # OUTPUT SETUP
+> # ============================================================
+> FIG_DIR <- "./output/figures"
+
+> TABLE_DIR <- "./output/tables"
+
+> dir.create(FIG_DIR, recursive = TRUE, showWarnings = FALSE)
+
+> dir.create(TABLE_DIR, recursive = TRUE, showWarnings = FALSE)
+
+> FIG_W <- 4
+
+> FIG_H <- 3
+
+> save_tikz <- function(plot_obj, filename) {
++   filepath <- file.path(FIG_DIR, paste0(filename, ".tex"))
++   tikz(filepath, width = FIG_W, height = FIG_H, standAlone = FALSE)
++   print(plot_obj)
++   dev.off()
++   cat(sprintf("Saved: %s\n", filepath))
++ }
+
+> # ============================================================
+> # SHARED HELPERS
+> # ============================================================
+> 
+> 
+> # Compact gof_map used across robustness tables (no IV diagnostics needed for
+> # most checks; IV-specific tables add their own rows).
+> gm_compact <- tribble(
++   ~raw,                   ~clean,           ~fmt,
++   "nobs",                 "Observations",   0,
++   "FE: bvd_id",           "Firm FE",        NA_real_,
++   "FE: year",             "Year FE",        NA_real_,
++   "FE: sic_1digit[year]", "Sector-Year FE", NA_real_
++ )
+
+> gm_iv <- tribble(
++   ~raw,                   ~clean,                   ~fmt,
++   "nobs",                 "Observations",           0,
++   "FE: bvd_id",           "Firm FE",                NA_real_,
++   "FE: year",             "Year FE",                NA_real_,
++   "FE: sic_1digit[year]", "Sector-Year FE",         NA_real_,
++   "kp_fstat",             "Kleibergen-Paap F-stat", 2,
++   "wu_hausman",           "Wu-Hausman p-value",     3
++ )
+
+> # glance hook so panelsummary can pick up IV diagnostics
+> glance_custom.fixest <- function(x, ...) {
++   out <- data.frame(row.names = "")
++   if (!is.null(x$iv)) {
++     out$kp_fstat <- fitstat(x, ~ivwald1)$ivwald1$stat
++     out$wu_hausman <- fitstat(x, ~wh)$wh$p
++   }
++   out
++ }
+
+> cluster_note <- "\\textit{Note:} Standard errors are clustered at the 2-digit SIC level. "
+
+> star_note <- "\\textit{Note:} *** p<0.01, ** p<0.05, * p<0.1"
+
+> # ============================================================
+> # R2 — STACKED PLACEBO EVENT STUDY (2017–2021 as "event")
+> # ============================================================
+> # Run the dynamic event-study spec treating each year 2017–2021 as the
+> # reform year (i.e., the reference year).  All coefficients should be null
+> # if AI exposure has no pre-existing relationship with employment trends.
+> 
+> placebo_years <- 2017:2020
+
+> make_event_study_plot_r2 <- function(model, ref_year) {
++   ggiplot(model) +
++     geom_hline(yintercept = 0, color = "black", linewidth = 0.5) +
++     geom_vline(
++       xintercept = ref_year, linetype = "dashed",
++       color = "gray50", linewidth = 0.5
++     ) +
++     labs(
++       title   = sprintf("Placebo event year: %d", ref_year),
++       x       = "Year",
++       y       = "Estimate",
++       caption = paste(star_note, cluster_note)
++     ) +
++     theme_classic(base_size = 9) +
++     theme(
++       panel.grid = element_blank(),
++       plot.caption = element_text(
++         hjust = 0, size = 6,
++         face = "italic", color = "gray30"
++       ),
++       plot.caption.position = "plot"
++     )
++ }
+
+> for (ref_yr in placebo_years) {
++   # OLS AI
++   m <- feols(
++     as.formula(sprintf(
++       "lemp ~ i(year, ai_2021, ref = %d) | bvd_id + year + sic_1digit[year]",
++       ref_yr
++     )),
++     cluster = ~sic_2digit, nthreads = 10,
++     weights = ~w_ai, data = data
++   )
++   p <- make_event_study_plot_r2(m, ref_yr)
++   save_tikz(p, sprintf("r2_placebo_ai_%d", ref_yr))
++   rm(m, p)
++ 
++   # OLS LLM
++   m <- feols(
++     as.formula(sprintf(
++       "lemp ~ i(year, llm_2021, ref = %d) | bvd_id + year + sic_1digit[year]",
++       ref_yr
++     )),
++     cluster = ~sic_2digit, nthreads = 10,
++     weights = ~w_llm, data = data
++   )
++   p <- make_event_study_plot_r2(m, ref_yr)
++   save_tikz(p, sprintf("r2_placebo_llm_%d", ref_yr))
++   rm(m, p)
++   gc()
++ }
+ERROR: 
+TeX was unable to calculate metrics for:
+
+	\char77
+
+Run the following commands for diagnosis:
+
+	tikzTest()
+	tikzTest("\\char77")
+
+Common reasons for failure include:
+  * The string contains a character which is special to LaTeX unless
+    escaped properly, such as % or $.
+  * The string makes use of LaTeX commands provided by a package and
+    the tikzDevice was not told to load the package.
+
+The TeX and log files used for the calculation can help diagnose the
+problem. If these files are missing, rerun the plot and make sure to
+keep the R session open.
+TeX file: tikzStringWidthCalc.tex
+Log file: tikzStringWidthCalc.log
+ 
+### ./do/03_robustness/03_02_mechanisms_and_heterogeneity.R ###
+
+> # ============================================================
+> # LIBRARIES
+> # ============================================================
+> library(tidyverse)
+
+> library(tikzDevice)
+
+> library(kableExtra)
+
+> library(panelsummary)
+
+> library(fixest)
+
+> library(WeightIt)
+
+> library(cobalt)
+
+> library(ggfixest)
+
+> library(arrow)
+
+> library(sf)
+
+> # ============================================================
+> # DATA LOADING & BASELINE CLEANING
+> # ============================================================
+> DATA_DIR <- "./data/output/main.parquet"
+
+> GEO_DIR <- "./data/input/codepo_gb.gpkg"
+
+> data <- read_parquet(DATA_DIR)
+
+> post_code <- st_read(GEO_DIR)
+Reading layer `codepoint' from data source `C:\Users\u2235356\Downloads\EC910_ Econometrics B project\data\input\codepo_gb.gpkg' using driver `GPKG'
+Simple feature collection with 1746551 features and 8 fields
+Geometry type: POINT
+Dimension:     XY
+Bounding box:  xmin: 0 ymin: 0 xmax: 655448 ymax: 1213658
+Projected CRS: OSGB36 / British National Grid
+
+> data <- data %>%
++   mutate(
++     baseline_age = 2019 - year(start_date),
++     sic_1digit = floor(sic_2digit / 10),
++     ta = ntile(total_assets, 10),
++     post = ifelse(year > 2021, 1, 0),
++     post_2019 = ifelse(year > 2019, 1, 0),
++     post_2018 = ifelse(year > 2018, 1, 0),
++     post_2017 = ifelse(year > 2017, 1, 0)
++   ) %>%
++   filter(year > 2015, exists == 1, !is.na(lemp))
+
+> # ============================================================
+> # BASELINE TOTAL ASSETS
+> # ============================================================
+> baseline_ta <- data %>%
++   filter(!is.na(total_assets)) %>%
++   arrange(bvd_id, year) %>%
++   group_by(bvd_id) %>%
++   slice(1) %>%
++   ungroup() %>%
++   select(bvd_id, baseline_ta = total_assets)
+
+> data <- data %>% left_join(baseline_ta, by = "bvd_id")
+
+> # ============================================================
+> # ENTROPY BALANCING WEIGHTS (WeightIt)
+> # ============================================================
+> baseline <- data %>%
++   distinct(bvd_id, .keep_all = TRUE) %>%
++   select(bvd_id, ai_2021, llm_2021, baseline_ta, baseline_age, sic_1digit) %>%
++   filter(complete.cases(.))
+
+> wb_ai <- weightit(ai_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal", estimand = "ATE"
++ )
+
+> wb_llm <- weightit(llm_2021 ~ baseline_ta + baseline_age,
++   data = baseline, method = "ebal", estimand = "ATE"
++ )
+
+> baseline <- baseline %>%
++   mutate(
++     w_ai  = wb_ai$weights,
++     w_llm = wb_llm$weights
++   )
+
+> data <- data %>%
++   left_join(baseline %>% select(bvd_id, w_ai, w_llm), by = "bvd_id")
+
+> rm(baseline_ta, baseline, wb_ai, wb_llm)
+
+> # ============================================================
+> # HETEROGENEITY BY LOCATION (DENSITY-WEIGHTED HEXBINS) [EXTREEMELY MEMORY INTENSIVE]
+> # ============================================================
+> 
+> # # 1. Standardize postcodes & aggregate scores
+> # data_aggregated <- data %>%
+> #   group_by(postcode) %>%
+> #   summarise(
+> #     ai_score = mean(w_ai, na.rm = TRUE),
+> #     llm_score = mean(w_llm, na.rm = TRUE)
+> #   ) %>%
+> #   mutate(postcode = str_replace_all(toupper(postcode), " ", ""))
+> 
+> # # 2. Join with spatial data, remove NAs, and crop rogue coordinates
+> # firms_sf <- post_code %>%
+> #   mutate(postcode = str_replace_all(toupper(postcode), " ", "")) %>%
+> #   left_join(data_aggregated, by = "postcode") %>%
+> #   filter(!is.na(ai_score) & !is.na(llm_score)) %>%
+> #   st_crop(xmin = 0, ymin = 0, xmax = 700000, ymax = 1300000) %>%
+> #   st_as_sf()
+> 
+> # # 3. Create a physical hexagonal grid over the UK (15km cells)
+> # hex_grid <- st_make_grid(firms_sf, cellsize = 15000, square = FALSE) %>% 
+> #   st_sf() %>%
+> #   mutate(grid_id = row_number())
+> 
+> # # 4. Intersect the firms with the grid
+> # firms_in_hex <- st_join(firms_sf, hex_grid, join = st_intersects)
+> 
+> # # 5. Aggregate BOTH AI and LLM scores AND count density per hexagon
+> # hex_aggregated <- firms_in_hex %>%
+> #   st_drop_geometry() %>%
+> #   group_by(grid_id) %>%
+> #   summarise(
+> #     avg_ai = mean(ai_score, na.rm = TRUE),
+> #     avg_llm = mean(llm_score, na.rm = TRUE),
+> #     firm_density = n()
+> #   ) %>%
+> #   filter(!is.na(avg_ai) & !is.na(avg_llm))
+> 
+> # # 6. Merge the aggregated stats back onto the spatial grid shapes
+> # final_hex_map <- hex_grid %>%
+> #   inner_join(hex_aggregated, by = "grid_id")
+> 
+> # ============================================================
+> # PLOTTING
+> # ============================================================
+> 
+> # # Plot 1: AI (Standard Blue Palette)
+> # plot_ai_density <- ggplot(data = final_hex_map) +
+> #   geom_sf(aes(fill = avg_ai, alpha = firm_density), color = NA) +
+> #   scale_fill_distiller(
+> #     palette = "Blues", 
+> #     direction = 1, # 1 makes darker = higher score
+> #     name = "Avg AI Score",
+> #     limits = quantile(final_hex_map$avg_ai, probs = c(0.05, 0.95), na.rm = TRUE),
+> #     oob = scales::squish
+> #   ) +
+> #   scale_alpha_continuous(
+> #     name = "Firm Count",
+> #     range = c(0.15, 1), 
+> #     trans = "log10"     
+> #   ) +
+> #   theme_void() +
+> #   theme(legend.position = "right") 
+> 
+> # # Plot 2: LLM (Purple-Blue Palette)
+> # plot_llm_density <- ggplot(data = final_hex_map) +
+> #   geom_sf(aes(fill = avg_llm, alpha = firm_density), color = NA) +
+> #   scale_fill_distiller(
+> #     palette = "PuBu", 
+> #     direction = 1, 
+> #     name = "Avg LLM Score",
+> #     limits = quantile(final_hex_map$avg_llm, probs = c(0.05, 0.95), na.rm = TRUE),
+> #     oob = scales::squish
+> #   ) +
+> #   scale_alpha_continuous(
+> #     name = "Firm Count",
+> #     range = c(0.15, 1), 
+> #     trans = "log10"     
+> #   ) +
+> #   theme_void() +
+> #   theme(legend.position = "right")
+> 
+> # # Save as compact, crisp PDFs
+> # ggsave(filename = "map_ai_density_weighted.pdf", plot = plot_ai_density, device = "pdf", width = 5, height = 6, units = "in")
+> # ggsave(filename = "map_llm_density_weighted.pdf", plot = plot_llm_density, device = "pdf", width = 5, height = 6, units = "in")
+> 
+> 
+> # data <- data %>%
+> #   mutate(
+> #     # 1. Temporarily strip spaces and make uppercase just to be safe
+> #     pc_clean = str_replace_all(toupper(postcode), " ", ""),
+>     
+> #     # 2. Use regex to find postcodes starting with the core London letters 
+> #     # IMMEDIATELY followed by a number (to prevent 'W' matching 'WA' for Warrington, etc.)
+> #     in_london = ifelse(str_detect(pc_clean, "^(E|EC|N|NW|SE|SW|W|WC)[0-9]"), 1, 0)
+> #   ) %>%
+> #   # 3. Drop the temporary clean column
+> #   select(-pc_clean)
+> 
+> # # OLS — AI — London
+> # ols.ai.london <- feols(
+> #   lemp ~ i(post, ai_2021, ref = 0) |
+> #     bvd_id + year + sic_1digit[year],
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_ai, data = data[data$in_london == 1, ]
+> # )
+> 
+> # # OLS — AI — Rest of UK
+> # ols.ai.ruk <- feols(
+> #   lemp ~ i(post, ai_2021, ref = 0) |
+> #     bvd_id + year + sic_1digit[year],
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_ai, data = data[data$in_london == 0, ]
+> # )
+> 
+> # # IV — AI — London
+> # iv.ai.london <- feols(
+> #   lemp ~ 1 | bvd_id + year + sic_1digit[year] |
+> #     i(post, ai_2021, ref = 0) ~ i(post, ai_2011, ref = 0),
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_ai, data = data[data$in_london == 1, ]
+> # )
+> 
+> # # IV — AI — Rest of UK
+> # iv.ai.ruk <- feols(
+> #   lemp ~ 1 | bvd_id + year + sic_1digit[year] |
+> #     i(post, ai_2021, ref = 0) ~ i(post, ai_2011, ref = 0),
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_ai, data = data[data$in_london == 0, ]
+> # )
+> 
+> # # OLS — LLM — London
+> # ols.llm.london <- feols(
+> #   lemp ~ i(post, llm_2021, ref = 0) |
+> #     bvd_id + year + sic_1digit[year],
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_llm, data = data[data$in_london == 1, ]
+> # )
+> 
+> # # OLS — LLM — Rest of UK
+> # ols.llm.ruk <- feols(
+> #   lemp ~ i(post, llm_2021, ref = 0) |
+> #     bvd_id + year + sic_1digit[year],
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_llm, data = data[data$in_london == 0, ]
+> # )
+> 
+> # # IV — LLM — London
+> # iv.llm.london <- feols(
+> #   lemp ~ 1 | bvd_id + year + sic_1digit[year] |
+> #     i(post, llm_2021, ref = 0) ~ i(post, llm_2011, ref = 0),
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_llm, data = data[data$in_london == 1, ]
+> # )
+> 
+> # # IV — LLM — Rest of UK
+> # iv.llm.ruk <- feols(
+> #   lemp ~ 1 | bvd_id + year + sic_1digit[year] |
+> #     i(post, llm_2021, ref = 0) ~ i(post, llm_2011, ref = 0),
+> #   cluster = ~sic_2digit, nthreads = 10,
+> #   weights = ~w_llm, data = data[data$in_london == 0, ]
+> # )
+> 
+> # # ============================================================
+> # # LONDON vs REST OF UK HETEROGENEITY TABLE
+> # # ============================================================
+> # panelsummary(
+> #   list(ols.ai.london, iv.ai.london, ols.ai.ruk, iv.ai.ruk),
+> #   list(ols.llm.london, iv.llm.london, ols.llm.ruk, iv.llm.ruk),
+> #   panel_labels = c("Panel A: AI Exposure", "Panel B: LLM Exposure"),
+> #   italic = TRUE,
+> #   format = "latex",
+> #   hline_after = TRUE,
+> #   hline_before_fe = TRUE,
+> #   pretty_num = TRUE,
+> #   collapse_fe = TRUE,
+> #   fmt = 3,
+> #   stars = c("*" = .1, "**" = .05, "***" = .01),
+> #   gof_map = gm,
+> #   coef_map = c(
+> #     "post::1:ai_2021"      = "Exposure × Post",
+> #     "post::1:ai_2011"      = "Exposure × Post",
+> #     "fit_post::1:ai_2021"  = "Exposure × Post",
+> #     "post::1:llm_2021"     = "Exposure × Post",
+> #     "post::1:llm_2011"     = "Exposure × Post",
+> #     "fit_post::1:llm_2021" = "Exposure × Post"
+> #   ),
+> #   caption = "Heterogeneity by Firm Location: London vs Rest of UK",
+> #   colnames = c("", "OLS", "IV", "OLS", "IV")
+> # ) %>%
+> #   add_header_above(
+> #     c(" " = 1, "London" = 2, "Rest of UK" = 2)
+> #   ) %>%
+> #   kable_styling(
+> #     latex_options = c("booktabs", "hold_position"),
+> #     position = "center",
+> #     full_width = FALSE
+> #   ) %>%
+> #   save_kable("output/tables/london_heterogeneity.tex")

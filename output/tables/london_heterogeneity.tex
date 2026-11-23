@@ -1,0 +1,37 @@
+\begin{center}
+\begin{threeparttable}
+\captionof{table}{Heterogeneity by Firm Location: London vs Rest of UK}
+\label{tab:london_het}
+\begin{tabular}[t]{lcccc}
+\toprule
+\multicolumn{1}{c}{ } & \multicolumn{2}{c}{London} & \multicolumn{2}{c}{Rest of UK} \\
+\cmidrule(l{3pt}r{3pt}){2-3} \cmidrule(l{3pt}r{3pt}){4-5}
+ & OLS & IV & OLS & IV\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{5}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.012 & 0.008 & 0.005 & 0.001\\
+\hspace{1em} & (0.020) & (0.019) & (0.014) & (0.013)\\
+\hspace{1em}Observations & 338,064 & 338,064 & 2,006,897 & \vphantom{1} 2,006,897\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & \vphantom{1} Yes\\
+\hspace{1em}Industry-trend & Yes & Yes & Yes & \vphantom{1} Yes\\
+\addlinespace[0.5cm]
+\multicolumn{5}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.001 & -0.003 & -0.000 & -0.005\\
+\hspace{1em} & (0.020) & (0.018) & (0.012) & (0.012)\\
+\hspace{1em}Observations & 338,064 & 338,064 & 2,006,897 & 2,006,897\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & Yes\\
+\hspace{1em}Industry-trend & Yes & Yes & Yes & \vphantom{1} Yes\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \small
+    \item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}.
+\end{tablenotes}
+\label{london_tests}
+\end{threeparttable}
+\end{center}

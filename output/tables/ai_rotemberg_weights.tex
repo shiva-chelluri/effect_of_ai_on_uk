@@ -1,0 +1,39 @@
+\begin{table}[!htbp]
+\caption{Top and Bottom 5 Industries by Rotemberg Weights for AI-Exposure}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{p{6.7cm}ccc}
+\toprule
+ SIC Code & Rotemberg Weight & Raw AI Exposure & Z'X (Covariance)\\
+\midrule
+\textit{Top 5}: &&&\\
+Legal and accounting activities
+ & 0.0552 & 1.6974 & 1.1245\\
+ Activities auxiliary to financial services and insurance activities
+ & 0.0499 & 1.5416 & 1.1204\\
+ Insurance; reinsurance and pension funding; except compulsory social security
+ & 0.0444 & 1.4610 & 1.0511\\
+ Financial service activities; except insurance and pension funding
+ & 0.0438 & 1.5203 & 0.9974\\
+ Computer programming; consultancy and related activities
+ & 0.0438 & 1.5601 & 0.9709\\
+\addlinespace
+\textit{Bottom 5}: &&&\\
+Printing and reproduction of recorded media
+& -0.0002 & 0.0455 & -0.1829\\
+Manufacture of chemicals and chemical products
+ & -0.0002 & -0.2009 & 0.0422\\
+Manufacture of coke and refined petroleum products
+ & -0.0004 & -0.1681 & 0.0725\\
+Remediation activities and other waste management services
+ & -0.0011 & 0.1600 & -0.2361\\
+Mining support service activities
+ & -0.0012 & 0.7314 & -0.0586\\
+\bottomrule
+\end{tabular}
+\end{threeparttable}
+\begin{tablenotes}
+    \item Rotemberg weights decompose the IV estimator into industry-level contributions \citep{goldsmith2020bartik}. Negative weights are small, confirming the estimate is not driven by illogical weighting.
+\end{tablenotes}
+\label{ai_rotemberg}
+\end{table}

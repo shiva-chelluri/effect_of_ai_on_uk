@@ -1,0 +1,44 @@
+\begin{table}[!htbp]
+\centering
+\caption{Effect of Exposure on Semi-Elasticity of Employment}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lccc}
+\toprule
+ & OLS & Reduced-Form & IV\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{4}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure × Post & 0.009 & 0.006 & 0.005\\
+\hspace{1em} & (0.014) & (0.016) & (0.013)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123 & \vphantom{1} 2,345,123\\
+\hspace{1em}Kleibergen-Paap F-stat &  &  & 396.939\\
+\hspace{1em}Wu-Hausman p-value &  &  & \vphantom{1} 0.000\\
+\hspace{1em}F-statistic & 14.985 & 14.984 & 14.984\\
+\addlinespace[0.5cm]
+\multicolumn{4}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure × Post & 0.003 & -0.003 & -0.002\\
+\hspace{1em} & (0.013) & (0.014) & (0.012)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123 & 2,345,123\\
+\hspace{1em}Kleibergen-Paap F-stat &  &  & 392.835\\
+\hspace{1em}Wu-Hausman p-value &  &  & 0.000\\
+\hspace{1em}F-statistic & 14.976 & 14.976 & 14.976\\
+\midrule
+\hspace{1em}Industry-Trend & Yes & Yes & Yes\\
+\hspace{1em}Firm FE & Yes & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes\\
+\midrule
+\midrule
+\bottomrule
+
+\end{tabular}
+
+\begin{tablenotes}
+    \item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. \\
+    Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}
+\end{tablenotes}
+\end{threeparttable}
+\label{tab:main_speci}
+\end{table}

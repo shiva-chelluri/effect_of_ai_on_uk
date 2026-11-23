@@ -1,0 +1,37 @@
+\begin{table}[!h]
+\centering
+\caption{Alternative Clustering at 1-Digit SIC}
+\centering
+\begin{threeparttable}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lcc}
+\toprule
+ & OLS & IV\\
+\midrule
+\multicolumn{3}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.009 & 0.005\\
+\hspace{1em} & (0.013) & (0.011)\\
+\hspace{1em}Observations & 2,345,123 & \vphantom{1} 2,345,123\\
+\hspace{1em}Firm FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Kleibergen-Paap F-stat &  & 129.35\\
+\hspace{1em}Wu-Hausman p-value &  & \vphantom{1} 0.000\\
+\multicolumn{3}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.003 & -0.002\\
+\hspace{1em} & (0.012) & (0.010)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123\\
+\hspace{1em}Firm FE & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes\\
+\hspace{1em}Kleibergen-Paap F-stat &  & 88.97\\
+\hspace{1em}Wu-Hausman p-value &  & 0.000\\
+\midrule
+\midrule
+\bottomrule
+\end{tabular*}
+
+\begin{tablenotes}
+\item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. Standard errors clustered at the 1-digit SIC level as a coarser alternative.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -1,0 +1,40 @@
+\begin{table}[!htbp]
+
+\caption{Top and Bottom 5 Industries by Rotemberg Weights for LLM-Exposure}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{p{6.7cm}ccc}
+\toprule
+SIC Code & Rotemberg Weight & Raw LLM Exposure & Z'X (Covariance)\\
+\midrule
+\textit{Top 5}: &&&\\
+Legal and accounting activities
+ & 0.0576 & 1.7163 & 1.1304\\
+ Activities auxiliary to financial services and insurance activities
+ & 0.0467 & 1.4647 & 1.0737\\
+Insurance; reinsurance and pension funding; except compulsory social security
+ & 0.0430 & 1.4073 & 1.0303\\
+ Advertising and market research
+ & 0.0416 & 1.5112 & 0.9273\\
+Financial service activities; except insurance and pension funding
+ & 0.0414 & 1.4426 & 0.9677\\
+\addlinespace
+\textit{Bottom 5}: &&&\\
+Sports activities and amusement and recreation activities
+ & -0.0001 & 0.0795 & -0.0259\\
+Rental and leasing activities
+& -0.0003 & 0.1420 & -0.0656\\
+Manufacture of other transport equipment
+ & -0.0003 & 0.0819 & -0.1325\\
+Remediation activities and other waste management services
+ & -0.0005 & 0.0538 & -0.2825\\
+Mining support service activities
+ & -0.0028 & 0.5321 & -0.1785\\
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item Rotemberg weights decompose the IV estimator into industry-level contributions \citep{goldsmith2020bartik}. Negative weights are small, confirming the estimate is not driven by illogical weighting.
+\end{tablenotes}
+\end{threeparttable}
+\label{llm_rotemberg}
+\end{table}

@@ -1,0 +1,38 @@
+\begin{table}[!htbp]
+\centering
+\caption{Effect of Exposure on Log Remuneration}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lcc}
+\toprule
+ & OLS & IV\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.011 & 0.011\\
+\hspace{1em} & (0.015) & (0.021)\\
+\hspace{1em}Observations & 421,403 & \vphantom{1} 421,403\\
+\hspace{1em}Firm FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Kleibergen-Paap F-stat &  & 427.592\\
+\hspace{1em}Wu-Hausman p-value &  & 0.472\\
+\addlinespace[0.5cm]
+\multicolumn{3}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.009 & 0.008\\
+\hspace{1em} & (0.016) & (0.022)\\
+\hspace{1em}Observations & 421,403 & 421,403\\
+\hspace{1em}Firm FE & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes\\
+\hspace{1em}Kleibergen-Paap F-stat &  & 453.244\\
+\hspace{1em}Wu-Hausman p-value &  & 0.551\\
+\midrule
+\midrule
+\bottomrule
+\end{tabular}
+\begin{tablenotes} 
+    \item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. \\Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}. 
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

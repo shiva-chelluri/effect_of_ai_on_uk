@@ -1,0 +1,35 @@
+\begin{table}[!h]
+\centering
+\caption{Heterogeneity by Firm Age Quartile (OLS)}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lcccc}
+\toprule
+ & Q1 (Youngest) & Q2 & Q3 & Q4 (Oldest)\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{5}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.015 & 0.015 & 0.028*** & 0.021**\\
+\hspace{1em} & (0.021) & (0.014) & (0.010) & (0.010)\\
+\hspace{1em}Observations & 579,353 & 579,528 & 588,023 & \vphantom{1} 598,216\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & \vphantom{1} Yes\\
+\addlinespace[0.5cm]
+\multicolumn{5}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & 0.005 & 0.006 & 0.025*** & 0.019*\\
+\hspace{1em} & (0.023) & (0.014) & (0.009) & (0.010)\\
+\hspace{1em}Observations & 579,353 & 579,528 & 588,023 & 598,216\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & Yes\\
+\midrule
+\midrule
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. 
+    \\Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}. Firm age quartiles computed from \textit{baseline age} $= 2019 - $ year of incorporation. 
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

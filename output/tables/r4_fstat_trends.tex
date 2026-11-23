@@ -1,0 +1,39 @@
+\begin{table}[!h]
+\centering
+\caption{ IV Models With and Without Trneds}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lcc}
+\toprule
+ & No Trend & With Trend\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{3}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post (IV) & 0.019 & 0.005\\
+\hspace{1em} & (0.022) & (0.013)\\
+\hspace{1em}Observations & 2,345,123 & \vphantom{1} 2,345,123\\
+\hspace{1em}Firm FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & \vphantom{1} Yes\\
+\hspace{1em}Kleibergen-Paap F-stat & 636.85 & 396.94\\
+\hspace{1em}Wu-Hausman p-value & 0.279 & 0.000\\
+\addlinespace[0.5cm]
+\multicolumn{3}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post (IV) & 0.014 & -0.002\\
+\hspace{1em} & (0.022) & (0.012)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123\\
+\hspace{1em}Firm FE & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes\\
+\hspace{1em}Kleibergen-Paap F-stat & 546.17 & 392.83\\
+\hspace{1em}Wu-Hausman p-value & 0.000 & 0.000\\
+\midrule
+\midrule
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+    \item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. 
+    \\Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}

@@ -1,0 +1,35 @@
+\begin{table}[!h]
+\centering
+\caption{Stacked Placebo Years (OLS, Static DiD)}
+\centering
+\begin{threeparttable}
+\begin{tabular}[t]{lccccc}
+\toprule
+Post $=$ & 2017 & 2018 & 2019 & 2020 & 2021\\
+\midrule
+\addlinespace[0.3em]
+\multicolumn{6}{l}{\textit{Panel A: AI Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & -0.004 & 0.007 & 0.014 & 0.015 & 0.009\\
+\hspace{1em} & (0.012) & (0.012) & (0.013) & (0.013) & (0.014)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123 & 2,345,123 & 2,345,123 & \vphantom{1} 2,345,123\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & Yes & \vphantom{1} Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & Yes & \vphantom{1} Yes\\
+\addlinespace[0.5cm]
+\multicolumn{6}{l}{\textit{Panel B: LLM Exposure}}\\
+\hline
+\hspace{1em}Exposure $\times$ Post & -0.014 & -0.005 & 0.001 & 0.003 & 0.003\\
+\hspace{1em} & (0.012) & (0.013) & (0.013) & (0.012) & (0.013)\\
+\hspace{1em}Observations & 2,345,123 & 2,345,123 & 2,345,123 & 2,345,123 & 2,345,123\\
+\hspace{1em}Firm FE & Yes & Yes & Yes & Yes & Yes\\
+\hspace{1em}Year FE & Yes & Yes & Yes & Yes & Yes\\
+\midrule
+\midrule
+\bottomrule
+\end{tabular}
+\begin{tablenotes}
+
+\item \textit{Note:} $^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01. Standard errors clustered at the 2-digit SIC level, i.e., the level of assignment of treatment following \cite{borusyak2025practical}. Each column redefines \textit{post} as the year shown.
+\end{tablenotes}
+\end{threeparttable}
+\end{table}
