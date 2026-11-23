@@ -50,3 +50,26 @@ The results are robust to variations in specification through placebo treatments
 └── writeup/
     └── main.pdf
 ```
+## Replication Instructions
+### Prerequisites
+* **R** ($\ge 4.2$) with packages:
+  ```r
+  install.packages(c(
+    "tidyverse", "readxl", "arrow", "haven", "lubridate",
+    "fixest", "ggfixest", "WeightIt", "cobalt",
+    "panelsummary", "modelsummary", "kableExtra", "knitr",
+    "tikzDevice", "sf"
+  ))
+  ```
+* Raw data files (not tracked in Git due to size and licensing) placed under `./data/input/`:
+  * `./data/input/financials/` — FAME/Orbis firm financial `.xlsx` exports by variable subfolder
+  * `./data/input/identifiers/` — `Identifiers - Sheet*.xlsx` files
+  * `./data/input/treatment_data/` — `aioe.xlsx`, `census_2021.csv`, `census_2011.csv`, `soc_2020_to_2010_mapping_lfs.csv`, `isco2d_to_soc2010_2d_crosswalk.csv`
+  * `./data/input/rti_102_countries/rti_country_specific_survey_predicted.dta`
+  * `./data/input/codepo_gb.gpkg` — OS Code-Point Open GB spatial geopackage
+### Running the Pipeline
+From the project root directory, run:
+```bash
+Rscript main.R
+```
+This executes all scripts in `./do/` sequentially, writes intermediate/final Parquet files to `./data/temp/` and `./data/output/`, exports all figures and tables to `./output/`, and logs console output to `ec910_group9_project_log.txt`.
